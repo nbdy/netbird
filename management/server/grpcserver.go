@@ -8,13 +8,13 @@ import (
 	"strings"
 	"time"
 
-	pb "github.com/golang/protobuf/proto" // nolint
-	"github.com/golang/protobuf/ptypes/timestamp"
 	"github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors/realip"
 	log "github.com/sirupsen/logrus"
 	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	pb "google.golang.org/protobuf/proto"
+	timestamp "google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/netbirdio/netbird/encryption"
 	"github.com/netbirdio/netbird/management/proto"

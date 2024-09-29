@@ -10,7 +10,6 @@ import (
 	sync2 "sync"
 	"time"
 
-	pb "github.com/golang/protobuf/proto" //nolint
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	log "github.com/sirupsen/logrus"
@@ -18,6 +17,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/keepalive"
+	pb "google.golang.org/protobuf/proto"
 
 	"github.com/netbirdio/netbird/encryption"
 	mgmtProto "github.com/netbirdio/netbird/management/proto"
