@@ -76,6 +76,12 @@ type PolicyUpdateOperation struct {
 	Values []string
 }
 
+// RulePortRange represents a range of ports for a firewall rule.
+type RulePortRange struct {
+	Start uint16
+	End   uint16
+}
+
 // PolicyRule is the metadata of the policy
 type PolicyRule struct {
 	// ID of the policy rule
@@ -110,6 +116,9 @@ type PolicyRule struct {
 
 	// Ports or it ranges list
 	Ports []string `gorm:"serializer:json"`
+
+	// PortRanges a list of port ranges.
+	PortRanges []RulePortRange `gorm:"serializer:json"`
 }
 
 // Copy returns a copy of a policy rule
@@ -125,10 +134,12 @@ func (pm *PolicyRule) Copy() *PolicyRule {
 		Bidirectional: pm.Bidirectional,
 		Protocol:      pm.Protocol,
 		Ports:         make([]string, len(pm.Ports)),
+		PortRanges:    make([]RulePortRange, len(pm.PortRanges)),
 	}
 	copy(rule.Destinations, pm.Destinations)
 	copy(rule.Sources, pm.Sources)
 	copy(rule.Ports, pm.Ports)
+	copy(rule.PortRanges, pm.PortRanges)
 	return rule
 }
 
@@ -190,6 +201,18 @@ func (p *Policy) UpgradeAndFix() {
 		}
 		// -- v0.20.4
 	}
+}
+
+// ruleGroups returns a list of all groups referenced in the policy's rules,
+// including sources and destinations.
+func (p *Policy) ruleGroups() []string {
+	groups := make([]string, 0)
+	for _, rule := range p.Rules {
+		groups = append(groups, rule.Sources...)
+		groups = append(groups, rule.Destinations...)
+	}
+
+	return groups
 }
 
 // FirewallRule is a rule of the firewall.
@@ -337,7 +360,8 @@ func (am *DefaultAccountManager) SavePolicy(ctx context.Context, accountID, user
 		return err
 	}
 
-	if err = am.savePolicy(account, policy, isUpdate); err != nil {
+	updateAccountPeers, err := am.savePolicy(account, policy, isUpdate)
+	if err != nil {
 		return err
 	}
 
@@ -352,7 +376,9 @@ func (am *DefaultAccountManager) SavePolicy(ctx context.Context, accountID, user
 	}
 	am.StoreEvent(ctx, userID, policy.ID, accountID, action, policy.EventMeta())
 
-	am.updateAccountPeers(ctx, account)
+	if updateAccountPeers {
+		am.updateAccountPeers(ctx, account)
+	}
 
 	return nil
 }
@@ -417,7 +443,7 @@ func (am *DefaultAccountManager) deletePolicy(account *Account, policyID string)
 
 // savePolicy saves or updates a policy in the given account.
 // If isUpdate is true, the function updates the existing policy; otherwise, it adds a new policy.
-func (am *DefaultAccountManager) savePolicy(account *Account, policyToSave *Policy, isUpdate bool) error {
+func (am *DefaultAccountManager) savePolicy(account *Account, policyToSave *Policy, isUpdate bool) (bool, error) {
 	for index, rule := range policyToSave.Rules {
 		rule.Sources = filterValidGroupIDs(account, rule.Sources)
 		rule.Destinations = filterValidGroupIDs(account, rule.Destinations)
@@ -431,50 +457,38 @@ func (am *DefaultAccountManager) savePolicy(account *Account, policyToSave *Poli
 	if isUpdate {
 		policyIdx := slices.IndexFunc(account.Policies, func(policy *Policy) bool { return policy.ID == policyToSave.ID })
 		if policyIdx < 0 {
-			return status.Errorf(status.NotFound, "couldn't find policy id %s", policyToSave.ID)
+			return false, status.Errorf(status.NotFound, "couldn't find policy id %s", policyToSave.ID)
 		}
 
+		oldPolicy := account.Policies[policyIdx]
 		// Update the existing policy
 		account.Policies[policyIdx] = policyToSave
-		return nil
+
+		if !policyToSave.Enabled && !oldPolicy.Enabled {
+			return false, nil
+		}
+		updateAccountPeers := anyGroupHasPeers(account, oldPolicy.ruleGroups()) || anyGroupHasPeers(account, policyToSave.ruleGroups())
+
+		return updateAccountPeers, nil
 	}
 
 	// Add the new policy to the account
 	account.Policies = append(account.Policies, policyToSave)
 
-	return nil
+	return anyGroupHasPeers(account, policyToSave.ruleGroups()), nil
 }
 
-func toProtocolFirewallRules(update []*FirewallRule) []*proto.FirewallRule {
-	result := make([]*proto.FirewallRule, len(update))
-	for i := range update {
-		direction := proto.FirewallRule_IN
-		if update[i].Direction == firewallRuleDirectionOUT {
-			direction = proto.FirewallRule_OUT
-		}
-		action := proto.FirewallRule_ACCEPT
-		if update[i].Action == string(PolicyTrafficActionDrop) {
-			action = proto.FirewallRule_DROP
-		}
-
-		protocol := proto.FirewallRule_UNKNOWN
-		switch PolicyRuleProtocolType(update[i].Protocol) {
-		case PolicyRuleProtocolALL:
-			protocol = proto.FirewallRule_ALL
-		case PolicyRuleProtocolTCP:
-			protocol = proto.FirewallRule_TCP
-		case PolicyRuleProtocolUDP:
-			protocol = proto.FirewallRule_UDP
-		case PolicyRuleProtocolICMP:
-			protocol = proto.FirewallRule_ICMP
-		}
+func toProtocolFirewallRules(rules []*FirewallRule) []*proto.FirewallRule {
+	result := make([]*proto.FirewallRule, len(rules))
+	for i := range rules {
+		rule := rules[i]
 
 		result[i] = &proto.FirewallRule{
-			PeerIP:    update[i].PeerIP,
-			Direction: direction,
-			Action:    action,
-			Protocol:  protocol,
-			Port:      update[i].Port,
+			PeerIP:    rule.PeerIP,
+			Direction: getProtoDirection(rule.Direction),
+			Action:    getProtoAction(rule.Action),
+			Protocol:  getProtoProtocol(rule.Protocol),
+			Port:      rule.Port,
 		}
 	}
 	return result

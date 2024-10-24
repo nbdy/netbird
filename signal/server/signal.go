@@ -6,14 +6,13 @@ import (
 	"io"
 	"time"
 
+	"github.com/netbirdio/signal-dispatcher/dispatcher"
 	log "github.com/sirupsen/logrus"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
-
-	"github.com/netbirdio/signal-dispatcher/dispatcher"
 
 	"github.com/netbirdio/netbird/signal/metrics"
 	"github.com/netbirdio/netbird/signal/peer"
@@ -53,7 +52,7 @@ func NewServer(ctx context.Context, meter metric.Meter) (*Server, error) {
 		return nil, fmt.Errorf("creating app metrics: %v", err)
 	}
 
-	dispatcher, err := dispatcher.NewDispatcher(ctx)
+	dispatcher, err := dispatcher.NewDispatcher(ctx, meter)
 	if err != nil {
 		return nil, fmt.Errorf("creating dispatcher: %v", err)
 	}
@@ -70,11 +69,6 @@ func NewServer(ctx context.Context, meter metric.Meter) (*Server, error) {
 // Send forwards a message to the signal peer
 func (s *Server) Send(ctx context.Context, msg *proto.EncryptedMessage) (*proto.EncryptedMessage, error) {
 	log.Debugf("received a new message to send from peer [%s] to peer [%s]", msg.Key, msg.RemoteKey)
-
-	if msg.RemoteKey == "dummy" {
-		// Test message send during netbird status
-		return &proto.EncryptedMessage{}, nil
-	}
 
 	if _, found := s.registry.Get(msg.RemoteKey); found {
 		s.forwardMessageToPeer(ctx, msg)

@@ -78,6 +78,9 @@ func (h *AccountsHandler) UpdateAccount(w http.ResponseWriter, r *http.Request) 
 		PeerLoginExpirationEnabled: req.Settings.PeerLoginExpirationEnabled,
 		PeerLoginExpiration:        time.Duration(float64(time.Second.Nanoseconds()) * float64(req.Settings.PeerLoginExpiration)),
 		RegularUsersViewBlocked:    req.Settings.RegularUsersViewBlocked,
+
+		PeerInactivityExpirationEnabled: req.Settings.PeerInactivityExpirationEnabled,
+		PeerInactivityExpiration:        time.Duration(float64(time.Second.Nanoseconds()) * float64(req.Settings.PeerInactivityExpiration)),
 	}
 
 	if req.Settings.Extra != nil {
@@ -134,13 +137,15 @@ func toAccountResponse(accountID string, settings *server.Settings) *api.Account
 	}
 
 	apiSettings := api.AccountSettings{
-		PeerLoginExpiration:        int(settings.PeerLoginExpiration.Seconds()),
-		PeerLoginExpirationEnabled: settings.PeerLoginExpirationEnabled,
-		GroupsPropagationEnabled:   &settings.GroupsPropagationEnabled,
-		JwtGroupsEnabled:           &settings.JWTGroupsEnabled,
-		JwtGroupsClaimName:         &settings.JWTGroupsClaimName,
-		JwtAllowGroups:             &jwtAllowGroups,
-		RegularUsersViewBlocked:    settings.RegularUsersViewBlocked,
+		PeerLoginExpiration:             int(settings.PeerLoginExpiration.Seconds()),
+		PeerLoginExpirationEnabled:      settings.PeerLoginExpirationEnabled,
+		PeerInactivityExpiration:        int(settings.PeerInactivityExpiration.Seconds()),
+		PeerInactivityExpirationEnabled: settings.PeerInactivityExpirationEnabled,
+		GroupsPropagationEnabled:        &settings.GroupsPropagationEnabled,
+		JwtGroupsEnabled:                &settings.JWTGroupsEnabled,
+		JwtGroupsClaimName:              &settings.JWTGroupsClaimName,
+		JwtAllowGroups:                  &jwtAllowGroups,
+		RegularUsersViewBlocked:         settings.RegularUsersViewBlocked,
 	}
 
 	if settings.Extra != nil {
